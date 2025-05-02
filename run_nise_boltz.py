@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import argparse
 import subprocess
 from pathlib import Path
 import prody as pr
@@ -33,6 +34,92 @@ from run_batch_inference import _run_inference, output_protein_structure, output
 
 from utility_scripts.burial_calc import compute_fast_ligand_burial_mask
 from utility_scripts.calc_symmetry_aware_rmsd import _main as calc_rmsd
+
+
+def parse_args():
+    """Parse command line arguments to create a params dict."""
+    parser = argparse.ArgumentParser(
+        description='Run a design campaign with LASErMPNN and Boltz1x.'
+    )
+    parser.add_argument('boltz1x_executable_path', type=str, 
+                        help='Path to the Boltz1x executable.')
+    parser.add_argument('input_path', type=str,
+                        help='Path to the input directory containing the '
+                        'PDB files for the backbones to be designed.')
+    parser.add_argument('ligand_3lc', type=str, 
+                        help='3-letter code for the ligand.')
+    parser.add_argument('ligand_smiles', type=str, 
+                        help='SMILES string for the ligand.')
+    parser.add_argument('--ligand-rmsd-mask-atoms', type=str, nargs='+', 
+                        help='Atoms to use for RMSD calculation.')
+    parser.add_argument('--ligand-burial-mask-atoms', type=str, nargs='+',
+                        help='Atoms to use for burial calculation.')
+    parser.add_argument('--num-iterations', type=int, default=100,
+                        help='Number of iterations to run.')
+    parser.add_argument('--num-top-backbones-per-round', type=int, default=3,
+                        help='Number of top backbones to keep per round.')
+    parser.add_argument('--sequences-sampled-at-once', type=int, default=64,
+                        help='Number of sequences to sample per backbone.')
+    parser.add_argument('--laser-inference-device', type=str, default='cuda:0',
+                        help='CUDA device to use for LASErMPNN inference.')
+    parser.add_argument('--boltz-inference-devices', type=str, nargs='+', 
+                        default=['cuda:' + str(i) for i in range(8)], 
+                        help='CUDA devices to use for Boltz1x inference.')
+    parser.add_argument('--reduce-executable-path', type=str,
+                        help='Path to the reduce executable. If provided, '
+                        'reduce will be used to protonate the ligand.')
+    parser.add_argument('--debug', action='store_true', 
+                        help='Run in debug mode.')
+    parser.add_argument('--no-wandb', action='store_true', 
+                        help='Do not use wandb for logging.')
+    args = parser.parse_args()
+
+    laser_sampling_params = {
+        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
+        'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
+        'disable_pbar': True, 
+        'disabled_residues_list': ['X', 'C'] # Disables cysteine sampling by default.
+    }
+
+    params = dict(
+        debug = args.debug,
+        use_wandb = not args.no_wandb,
+
+        input_dir = Path(args.input_path).resolve(),
+
+        ligand_3lc = args.ligand_3lc, # Should match CCD if using reduce.
+        ligand_rmsd_mask_atoms = set(args.ligand_rmsd_mask_atoms) \
+            if args.ligand_rmsd_mask_atoms is not None else set(),
+        ligand_burial_mask_atoms = set(args.ligand_burial_mask_atoms) \
+            if args.ligand_burial_mask_atoms is not None else set(),
+        laser_sampling_params = laser_sampling_params,
+        ligand_smiles = args.ligand_smiles,
+
+        keep_input_backbone_in_queue = False,
+        rmsd_use_chirality = False,
+        self_consistency_ligand_rmsd_threshold = 2.5,
+        self_consistency_protein_rmsd_threshold = 1.5,
+
+        use_reduce_protonation = (type(args.reduce_executable_path) is str), # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.
+        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
+        reduce_executable_path = Path(args.reduce_executable_path), # Can set to None if use_reduce_protonation False
+
+        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
+
+        num_iterations = args.num_iterations,
+        num_top_backbones_per_round = args.num_top_backbones_per_round,
+        sequences_sampled_at_once = args.sequences_sampled_at_once,
+
+        worker_init_port = 12389,
+        boltz1x_executable_path = args.boltz1x_executable_path,
+        boltz_inference_devices = args.boltz_inference_devices,
+
+        sequences_sampled_per_backbone = 64 if not args.debug else 2 * len(args.boltz_inference_devices),
+
+        laser_inference_device = 'cuda:0',
+        laser_inference_dropout = True,
+    )
+    return params
 
 
 def get_boltz_fasta_boilerplate(sequence, smiles):
@@ -409,50 +496,7 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
 
 if __name__ == "__main__":
-
-    laser_sampling_params = {
-        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
-        'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
-        'disable_pbar': True, 
-        'disabled_residues_list': ['X', 'C'] # Disables cysteine sampling by default.
-    }
-
-    params = dict(
-        debug = (debug := False),
-        use_wandb = (use_wandb := (True and not debug)),
-
-        input_dir = Path('./debug/').resolve(),
-
-        ligand_3lc = 'EXA', # Should match CCD if using reduce.
-        ligand_rmsd_mask_atoms = {'C20', 'C21'},
-        ligand_burial_mask_atoms = {'N2', 'C5', 'C6', 'C7', 'O1', 'C2', 'C4', 'C8', 'C15', 'C14', 'C9', 'C3'},
-        laser_sampling_params = laser_sampling_params,
-        ligand_smiles = "CC[C@]1(O)C2=C(C(N3CC4=C5[C@@H]([NH3+])CCC6=C5C(N=C4C3=C2)=CC(F)=C6C)=O)COC1=O",
-
-        keep_input_backbone_in_queue = False,
-        rmsd_use_chirality = False,
-        self_consistency_ligand_rmsd_threshold = 2.5,
-        self_consistency_protein_rmsd_threshold = 1.5,
-
-        use_reduce_protonation = False, # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.
-        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
-        reduce_executable_path = Path('/nfs/polizzi/bfry/programs/reduce/reduce'), # Can set to None if use_reduce_protonation False
-
-        model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
-
-        num_iterations = 100,
-        num_top_backbones_per_round = 3,
-        sequences_sampled_at_once = 30,
-
-        worker_init_port = 12389,
-        boltz1x_executable_path = '/nfs/polizzi/bfry/miniforge3/envs/boltz1x/bin/boltz',
-        boltz_inference_devices = (boltz_inference_devices := ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3', 'cuda:4', 'cuda:5', 'cuda:6', 'cuda:7']),
-
-        sequences_sampled_per_backbone = 64 if not debug else 2 * len(boltz_inference_devices),
-
-        laser_inference_device = 'cuda:0',
-        laser_inference_dropout = True,
-    )
-    if use_wandb:
+    params = parse_args()
+    if params.use_wandb:
         wandb.init(project='design-campaigns', entity='benf549', config=params)
     main(**params)

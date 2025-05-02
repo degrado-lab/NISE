@@ -25,7 +25,7 @@ tar -xvf hetdict.tar.gz
 ```
 
 3) Activate your conda environment containing Boltz-1x and run `which boltz` to get the path to the executable you call when running `boltz predict` commands. 
-You will need to update this path in `run_nise_boltz.py`
+You will need to provide this path as an argument to `run_nise_boltz.py`
 
 ### Running NISE:
 
@@ -39,14 +39,6 @@ WARNING: This will rename the ligand atoms, ligand chain, and resnum.
 
 3) Create an input directory with a subfolder called input_backbones. Ex: `./debug/input_backbones/`.
 
-
-4) Update the params dictionary at the bottom of `./run_nise_boltz.py` with the path to your new input dir ex: (`input_dir = Path('./debug/input_backbones/'`).
-
-
-5) Update burial and RMSD atom sets and smiles string in `./run_nise_boltz.py`
-
-6) Update `boltz1x_executable_path` at bottom of `./run_nise_boltz.py`
-
 To test out an example run:
 
 ```bash
@@ -58,5 +50,5 @@ mkdir -p ./debug/input_backbones/
 
 cp ./example_pdbs/test_input_protonated_conect.pdb ./debug/input_backbones/
 
-./run_nise_boltz.py
+./run_nise_boltz.py $PATH_TO_BOLTZ1X ./debug/input_backbones/ $LIGAND_THREE_LETTER_CODE $LIGAND_SMILES
 ```
