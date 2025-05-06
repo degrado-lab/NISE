@@ -20,9 +20,10 @@ from typing import *
 
 CURR_DIR_PATH = str(Path(os.path.abspath(__file__)).parent)
 LASER_PATH = str(Path(CURR_DIR_PATH) / 'LASErMPNN')
+UTILITY_PATH = str(Path(CURR_DIR_PATH) / 'utility_scripts')
 
 sys.path.append(LASER_PATH)
-sys.path.append('/nfs/polizzi/bfry/programs/utility_scripts')
+sys.path.append(UTILITY_PATH)
 
 import wandb
 import torch
@@ -101,8 +102,8 @@ def parse_args():
         self_consistency_protein_rmsd_threshold = 1.5,
 
         use_reduce_protonation = (type(args.reduce_executable_path) is str), # If False, will use RDKit to protonate, these hydrogens will not preserve the input names.
-        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute(), # Can set to None if use_reduce_protonation False
-        reduce_executable_path = Path(args.reduce_executable_path), # Can set to None if use_reduce_protonation False
+        reduce_hetdict_path = Path('./modified_hetdict.txt').absolute() if (type(args.reduce_executable_path) is str) else None,
+        reduce_executable_path = Path(args.reduce_executable_path) if (type(args.reduce_executable_path) is str) else None,
 
         model_checkpoint = Path(LASER_PATH) / 'model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt',
 
@@ -497,6 +498,6 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
 
 if __name__ == "__main__":
     params = parse_args()
-    if params.use_wandb:
+    if params['use_wandb']:
         wandb.init(project='design-campaigns', entity='benf549', config=params)
     main(**params)
