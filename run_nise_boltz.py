@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import tempfile
 import argparse
 import subprocess
 from pathlib import Path
@@ -186,9 +187,12 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     AllChem.ComputeGasteigerCharges(pdb_mol)
     Chem.MolToMolFile(pdb_mol, str(sdf_path.resolve()))
 
-    Chem.MolToPDBFile(pdb_mol, 'test.pdb')
+    with tempfile.NamedTemporaryFile(suffix='.pdb', delete=False) as tmp:
+        tmp_path = tmp.name
+        Chem.MolToPDBFile(pdb_mol, tmp_path)
 
-    B = pr.parsePDB('test.pdb')
+    B = pr.parsePDB(tmp_path)
+    os.remove(tmp_path)
     B.setChids(['B' for _ in range(len(ligand.getResnames()))])
     B.setResnums([1 for _ in range(len(ligand.getResnames()))])
     A = input_protein.select('protein').copy() + B
