@@ -43,43 +43,47 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='Run a design campaign with LASErMPNN and Boltz1x.'
     )
-    parser.add_argument('boltz1x_executable_path', type=str, 
+    parser.add_argument('boltz1x_executable_path', type=str,
                         help='Path to the Boltz1x executable.')
     parser.add_argument('input_path', type=str,
                         help='Path to the input directory containing the '
                         'PDB files for the backbones to be designed.')
-    parser.add_argument('ligand_3lc', type=str, 
+    parser.add_argument('ligand_3lc', type=str,
                         help='3-letter code for the ligand.')
-    parser.add_argument('ligand_smiles', type=str, 
+    parser.add_argument('ligand_smiles', type=str,
                         help='SMILES string for the ligand.')
-    parser.add_argument('--ligand-rmsd-mask-atoms', type=str, nargs='+', 
+    parser.add_argument('--ligand-rmsd-mask-atoms', type=str, nargs='+',
                         help='Atoms to use for RMSD calculation.')
     parser.add_argument('--ligand-burial-mask-atoms', type=str, nargs='+',
                         help='Atoms to use for burial calculation.')
     parser.add_argument('--num-iterations', type=int, default=100,
-                        help='Number of iterations to run.')
+                        help='Number of iterations to run (default 100).')
     parser.add_argument('--num-top-backbones-per-round', type=int, default=3,
-                        help='Number of top backbones to keep per round.')
+                        help='Number of top backbones to keep per round'
+                        '(deault 3).')
     parser.add_argument('--sequences-sampled-at-once', type=int, default=64,
-                        help='Number of sequences to sample per backbone.')
+                        help='Number of sequences to sample per backbone'
+                        '(default 64).')
     parser.add_argument('--laser-inference-device', type=str, default='cuda:0',
-                        help='CUDA device to use for LASErMPNN inference.')
-    parser.add_argument('--boltz-inference-devices', type=str, nargs='+', 
-                        default=['cuda:' + str(i) for i in range(8)], 
-                        help='CUDA devices to use for Boltz1x inference.')
+                        help='CUDA device to use for LASErMPNN inference'
+                        '(default cuda:0).')
+    parser.add_argument('--boltz-inference-devices', type=str, nargs='+',
+                        default=['cuda:' + str(i) for i in range(8)],
+                        help='CUDA devices to use for Boltz1x inference'
+                        '(default cuda:0 through cuda:7).')
     parser.add_argument('--reduce-executable-path', type=str,
                         help='Path to the reduce executable. If provided, '
                         'reduce will be used to protonate the ligand.')
-    parser.add_argument('--debug', action='store_true', 
+    parser.add_argument('--debug', action='store_true',
                         help='Run in debug mode.')
-    parser.add_argument('--no-wandb', action='store_true', 
+    parser.add_argument('--no-wandb', action='store_true',
                         help='Do not use wandb for logging.')
     args = parser.parse_args()
 
     laser_sampling_params = {
-        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5, 
+        'sequence_temp': 0.5, 'first_shell_sequence_temp': 0.5,
         'chi_temp': 1e-6, 'seq_min_p': 0.0, 'chi_min_p': 0.0,
-        'disable_pbar': True, 
+        'disable_pbar': True,
         'disabled_residues_list': ['X', 'C'] # Disables cysteine sampling by default.
     }
 
@@ -135,7 +139,7 @@ def check_input(dir_path: Path, model_weights_path: Path):
 
     if not dir_path.is_dir():
         raise NotADirectoryError(f"Path {dir_path} is not a directory.")
-    
+
     num_files = len([x for x in dir_path.iterdir() if x.is_file() and x.suffix == '.pdb'])
     if num_files == 0:
         raise FileNotFoundError(f"No PDB files found in {dir_path}")
@@ -178,7 +182,7 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
     pdb_path = Path(str(sdf_path.resolve()).rsplit('.')[0] + '.pdb')
     with pdb_path.open('w') as f:
         f.write(ligand_string)
-    
+
     pdb_mol = Chem.MolFromPDBBlock(ligand_string)
     smi_mol = Chem.MolFromSmiles(ligand_smiles)
 
@@ -204,11 +208,11 @@ def construct_helper_files(sdf_path, params_path, backbone_path, ligand_smiles):
 
 
 class DesignCampaign:
-    def __init__(self, 
+    def __init__(self,
         model_checkpoint, input_dir, ligand_rmsd_mask_atoms, ligand_burial_mask_atoms, laser_inference_device, debug, ligand_3lc,
         rmsd_use_chirality, self_consistency_ligand_rmsd_threshold, self_consistency_protein_rmsd_threshold,
-        laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone, 
-        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port, 
+        laser_inference_dropout, num_iterations, num_top_backbones_per_round, laser_sampling_params, sequences_sampled_per_backbone,
+        sequences_sampled_at_once, boltz_inference_devices, ligand_smiles, worker_init_port,
         boltz1x_executable_path, use_reduce_protonation, keep_input_backbone_in_queue, **kwargs
     ):
         self.debug = debug
@@ -220,7 +224,7 @@ class DesignCampaign:
         self.rmsd_use_chirality = rmsd_use_chirality
         self.self_consistency_ligand_rmsd_threshold = self_consistency_ligand_rmsd_threshold
         self.self_consistency_protein_rmsd_threshold = self_consistency_protein_rmsd_threshold
-        self.keep_input_backbone_in_queue = keep_input_backbone_in_queue 
+        self.keep_input_backbone_in_queue = keep_input_backbone_in_queue
 
         self.num_iterations = num_iterations
         self.sequences_sampled_per_backbone = sequences_sampled_per_backbone
@@ -233,7 +237,7 @@ class DesignCampaign:
 
         self.laser_sampling_params = laser_sampling_params
         self.laser_inference_dropout = laser_inference_dropout
-        
+
         self.sampling_metadata = defaultdict(float)
         self.sampling_metadata['min_protein_rmsd'] = float('inf')
         self.sampling_metadata['min_ligand_rmsd'] = float('inf')
@@ -266,7 +270,7 @@ class DesignCampaign:
 
         assert self.sdf_path.exists(), f"Error creating SDF file {self.sdf_path}"
         assert self.params_path.exists(), f"Error creating params file {self.params_path}"
-    
+
     def sample_sequences(self, backbone_path: str) -> List[pr.AtomGroup]:
         sampled_proteins = []
         sampled_sequences = []
@@ -285,7 +289,7 @@ class DesignCampaign:
                 sampled_sequences.append(out_prot.ca.getSequence())
 
             num_sampled += num_seq_to_sample
-        
+
         return sampled_proteins, sampled_sequences
 
     def identify_backbone_candidates(self, sorted_designs_boltz: Sequence[Path], sorted_designs_laser: Sequence[Path], reduce_executable_path, reduce_hetdict_path):
@@ -336,7 +340,7 @@ class DesignCampaign:
 
             # Check ligand burial in boltz structure.
             ligand_heavy_atom_mask = compute_fast_ligand_burial_mask(boltz_prot.ca.getCoords(), boltz_coords[burial_mask], num_rays=3)
-            
+
             if ligand_heavy_atom_mask.all().item() or self.debug:
                 ligand_is_buried.append(True)
                 if (ligand_rmsd < self.self_consistency_ligand_rmsd_threshold and protein_rmsd < self.self_consistency_protein_rmsd_threshold) or self.debug:
@@ -359,12 +363,12 @@ class DesignCampaign:
                     self.backbone_queue.append((pdb_output_path, boltz_bfacs))
             else:
                 ligand_is_buried.append(False)
-        
+
         self.backbone_queue = sorted(self.backbone_queue, key=lambda x: float(x[1]), reverse=True)[:self.top_k]
 
         return sorted_designs_laser, sorted_designs_boltz, ligand_rmsds, protein_rmsds, ligand_plddts, ligand_is_buried
 
-    
+
     def log(self, use_wandb: bool, dataframe: pd.DataFrame):
 
         self.sampling_metadata['min_protein_rmsd'] = min(self.sampling_metadata['min_protein_rmsd'], dataframe['protein_rmsds'].dropna().min())
@@ -393,7 +397,7 @@ class DesignCampaign:
             scatter_fig = px.scatter(dataframe, x='ligand_rmsds', y='ligand_plddts', color='protein_rmsds', hover_data=['protein_rmsds', 'sequences'], range_color=[0.0, 2.5], range_y=[0.0, 1.0], range_x=[0.0, 5.0])
             logs['ligand_RMSD_vs_pLDDT_scatter'] = wandb.Html(plotly.io.to_html(scatter_fig)) # type: ignore
             wandb.log(logs)
-    
+
 
 async def run_command(command: str, cuda_devices: Sequence[str]):
     command = f'CUDA_VISIBLE_DEVICES={",".join(cuda_devices)} {command}'
@@ -449,13 +453,13 @@ def main(use_wandb, reduce_executable_path, reduce_hetdict_path, **kwargs):
         # Make subdirectories to write outputs to disk.
         sampling_subdir = design_campaign.sampled_backbones_path / f'iter_{iidx}'
         laser_output_subdir = sampling_subdir / 'laser_outputs'
-        boltz_input_dir = sampling_subdir / 'boltz_inputs' 
+        boltz_input_dir = sampling_subdir / 'boltz_inputs'
         laser_output_subdir.mkdir(exist_ok=True, parents=True)
         boltz_input_dir.mkdir(exist_ok=True)
 
         # Write all the boltz input directories.
         all_boltz_input_path_names = []
-        sampled_sequence_chunks = np.array_split(all_sampled_sequences, len(design_campaign.boltz_inference_devices)) 
+        sampled_sequence_chunks = np.array_split(all_sampled_sequences, len(design_campaign.boltz_inference_devices))
         for idx, chunk_sequences in enumerate(sampled_sequence_chunks):
             for seq_idx, seq in enumerate(chunk_sequences):
                 boltz_input_output_path = boltz_input_dir / f'chunk_{idx}_seq_{seq_idx}.fasta'
