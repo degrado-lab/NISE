@@ -403,7 +403,9 @@ async def run_command(command: str, cuda_devices: Sequence[str]):
     command = f'CUDA_VISIBLE_DEVICES={",".join(cuda_devices)} {command}'
 
     proc = await asyncio.create_subprocess_shell(command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
-    await proc.communicate()
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Boltz failed ({proc.returncode}):\n{stderr.decode()}")
 
 
 async def predict_complex_structures(boltz_inputs_dir, boltz1x_executable_path, boltz_inference_devices, boltz_output_dir):
